@@ -17,6 +17,7 @@
 import argparse
 import inspect
 import json
+import os
 from pathlib import Path
 from contextlib import nullcontext
 from time import perf_counter
@@ -163,6 +164,13 @@ def print_trace(result, elapsed_seconds: float | None = None) -> None:
                                 print(f"      {child['content']}")
                         if not data["children"]:
                             print(f"    （末端ページ・本文{len(node.get('content', ''))}文字を取得）")
+                elif part.tool_name == "search_materials":
+                    data = json.loads(part.content)
+                    results = data.get("results", [])
+                    print(f"[tool return] search_materials -> {len(results)}ページ"
+                          + (f" / error: {data['error']}" if "error" in data else ""))
+                    for r in results:
+                        print(f"    - {r['document_id']} PDF p.{r['page']} · {r['title']} ({r.get('role', 'hit')})")
                 else:
                     print(f"[tool return] {part.tool_name} -> {str(part.content)[:120]}…")
     usage = result.usage
@@ -203,6 +211,7 @@ def main() -> None:
             parser.error("質問を指定してください")
 
         print(f"[model] {MODEL}")
+        print(f"[retrieval] 前後ページ付き: {os.getenv('AIE_NEIGHBORS') == '1'}")
         if args.mcp:
             print("[tools] MCP サーバー（app/mcp_servers.json）")
 
