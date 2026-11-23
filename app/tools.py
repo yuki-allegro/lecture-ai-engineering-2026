@@ -88,10 +88,13 @@ def search_materials(query: str) -> str:
     """
     from google.genai.errors import APIError
     import sqlite3
-    from app.retrieval import search
+    import os
+    from app.retrieval import search, search_with_neighbors
 
+    # AIE_NEIGHBORS=1 のとき、ヒットした各ページの前後1ページも付ける（第5回 宿題・実装）
+    run = search_with_neighbors if os.getenv("AIE_NEIGHBORS") == "1" else search
     try:
-        return json.dumps({"results": search(query)}, ensure_ascii=False)
+        return json.dumps({"results": run(query)}, ensure_ascii=False)
     except (ValueError, FileNotFoundError, sqlite3.Error) as e:
         return json.dumps({"error": str(e), "results": []}, ensure_ascii=False)
     except APIError as e:

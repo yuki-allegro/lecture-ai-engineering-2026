@@ -138,6 +138,37 @@ def search(query: str) -> list[dict]:
         return [dict(row) for row in rows]
 
 
+def search_with_neighbors(query: str, radius: int = 1) -> list[dict]:
+    """通常の検索結果に、同じ資料内の前後radiusページの本文も付けて返す。"""
+    hits = search(query)
+    # 資料ごとのページ順（load_pagesの並び＝資料→章→ページ）
+    by_doc: dict[str, list[dict]] = defaultdict(list)
+    for page in load_pages(RAG_SOURCE):
+        by_doc[page["document_id"]].append(page)
+    position = {pg["page_id"]: (doc, i) for doc, ps in by_doc.items() for i, pg in enumerate(ps)}
+
+    hit_ids = {h["page_id"] for h in hits}
+    results, seen = [], set()
+    for hit in hits:
+        doc, i = position[hit["page_id"]]
+        pages = by_doc[doc]
+        # 前→ヒット→後の順。他のヒットページは、そのヒット側で出すので隣接としては出さない
+        for j in range(i - radius, i + radius + 1):
+            if not 0 <= j < len(pages):
+                continue  # 資料の先頭・末尾の外
+            page = pages[j]
+            if page["page_id"] in seen:
+                continue
+            if j == i:
+                results.append({**hit, "role": "hit"})
+            elif page["page_id"] in hit_ids:
+                continue
+            else:
+                results.append({**page, "role": "neighbor", "near": hit["page_id"]})
+            seen.add(page["page_id"])
+    return results
+
+
 def search_graph(query: str) -> dict:
     """ベクトル検索を入口に、前後ページと共通用語で候補を広げる。"""
     pages = {page["page_id"]: page for page in load_pages(RAG_SOURCE)}
@@ -201,11 +232,14 @@ def run_full_context(agent, question: str, model, instructions: str, prompt_temp
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="エージェントを使わず、講義資料の検索だけを実行する")
     parser.add_argument("query", help="調べたい内容")
+    parser.add_argument("--neighbors", action="store_true", help="前後1ページも付ける")
     args = parser.parse_args()
-    for i, result in enumerate(search(args.query), 1):
+    results = search_with_neighbors(args.query) if args.neighbors else search(args.query)
+    for i, result in enumerate(results, 1):
         print(f"\n{'=' * 60}\n検索結果 {i}\n{'=' * 60}")
         print(f"講義: {result['document_title']}")
         print(f"章: {result['section']}")
         print(f"タイトル: {result['title']}")
         print(f"ページ: {result['page']}")
+        print(f"役割: {result.get('role', 'hit')}")
         print(f"\n{result['content']}")
